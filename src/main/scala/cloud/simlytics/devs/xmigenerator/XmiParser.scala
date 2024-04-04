@@ -43,6 +43,15 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
   val modelAssociationMap: Map[String, Node] = buildNodeMap(modelAssociationNodes)
 
   val devsClassNameMap: Map[String, String] = buildClassNameMap(devsClassNodes)
+  val devsClassIdMap: Map[String, String] = devsClassNameMap.map { case (k, v) =>
+    v -> k
+  }
+
+  val mapProperties: List[String] = (modelFileElement \\ "Map").filter { node =>
+    node.attribute("base_Property").nonEmpty
+  }.map { node =>
+    attributeValue(node, "base_Property")
+  }.toList
 
   //val experimentalFrameNode = getNodesOfType(modelClassNodes, "ExperimentalFrame", devsClassNameMap).head
   val experimentalFrameNode = modelClassNodes.filter(n => getParentClassNames(n, devsNodeMap).contains("ExperimentalFrame")).head
@@ -216,14 +225,15 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       flow.fromModel == modelName
     }
 
-    val pendingOutputPortVariables = modelOutputFlows.map(f => s"List<${f.toPortType}> pending${upperFirstLetter(f.fromPort)}Out").toList
+    val pendingOutputPortVariables = modelOutputFlows.map(f =>
+      Parameter(s"List<${f.toPortType}>", s"pending${upperFirstLetter(f.fromPort)}Out")).toList
 
-    val modelStateStrings = modelState.map(toClassNameType(_)).toList ++ pendingOutputPortVariables
+    val modelStateParameters = modelState.map(toClassNameType(_)).toList ++ pendingOutputPortVariables
 
     println(s"${modelName} Java internal state variables:")
-    modelStateStrings.foreach(node => println(_))
+    modelStateParameters.foreach(node => println(_))
     val stateGenerator = new ImmutableGenerator(modelName + "State", modelPackage, immutablesPkg,
-      modelStateStrings, true)
+      modelStateParameters, true)
     generateImmutable(stateGenerator, modelDirectory)
 
     println(s"${modelName} Java Properties:")
@@ -234,19 +244,21 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
     val operations: List[OwnedOperation] = accumulateOperations(modelParents).map { node =>
       val operationName = attributeValue(node, "name")
-      val parameters: List[String] = (node \ "ownedParameter")
+      val parameters: List[Parameter] = (node \ "ownedParameter")
         .filter(parameterNode => attributeValueOption(parameterNode, "direction") != Some("out"))
         .map { parameterNode =>
         toClassNameType(parameterNode)
       }.toList
 
-      val result: String = (node \ "ownedParameter")
+      val result: Parameter = (node \ "ownedParameter")
         .filter(node => attributeValueOption(node, "direction") == Some("out"))
         .map { parameterNode =>
-          toClassNameType(parameterNode).split(" ")(0)
-        }.headOption.getOrElse("void")
+          toClassNameType(parameterNode)
+        }.headOption.getOrElse(Parameter("void", "void"))
 
-      OwnedOperation(operationName, parameters, result)
+      val commentOption = (node \ "ownedComment" \ "body").headOption.map(_.text)
+
+      OwnedOperation(operationName, parameters, result, commentOption)
     }.toList
 
     val outputPorts = modelPorts.filter(port => modelOutputFlows.map(f => f.fromPort).contains(lowerFirstLetter(attributeValue(port, "name"))))
@@ -360,7 +372,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     }
   }
 
-  def toClassNameType(propertyNode: Node): String = {
+  def toClassNameType(propertyNode: Node): Parameter = {
     val propertyName: String = attributeValueOption(propertyNode, "name").getOrElse {
       throw new IllegalArgumentException("The state node below has no \"name\" attribute.\n" + propertyNode)
     }
@@ -376,10 +388,12 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
         (propertyNode \ "type").headOption match {
           case Some(typeNode) =>
             // The property is a primitive type
-            val primitiveType = attributeValueOption(typeNode, "href").getOrElse {
+            val typeAttribute = attributeValueOption(typeNode, "href").getOrElse {
               throw new IllegalArgumentException("The type node below has no \"href\" attribute\n" + typeNode)
             }
-            val className = primitiveType match {
+            val className = typeAttribute match {
+              case x if x.startsWith("DEVSFramework.uml#") =>
+                devsClassIdMap(typeAttribute.substring("DEVSFramework.uml#".length))
               case x if x.contains("#String") => "String"
               case x if x.contains("#Real") => "Double"
               case x if x.contains("#Integer") => "Integer"
@@ -429,7 +443,8 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
             determineMultiplicity(associationNode, className)
         }
     }
-    propertyClass + " " + propertyName
+    val comment: Option[String] = (propertyNode \ "ownedComment" \ "body").headOption.map(_.text)
+    Parameter(propertyClass, propertyName, comment)
   }
 
   /**
@@ -448,7 +463,28 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
           throw new IllegalArgumentException("upperValue element in node below has not \"value\" attribute.\n" + node)
         }
         upperValue match {
-          case "*" => s"List<${className}>"
+          case "*" =>
+            mapProperties.contains(attributeValueOption(node, "xmi:id").getOrElse("")) match {
+              case true =>
+                // This property is a Map value.  It should contain two attributes, the key first, then the value
+                val classNode: Node = modelClassNodes.find(attributeValue(_, "name") == className).getOrElse {
+                  throw new IllegalArgumentException(s"Could not fine class name ${className} in modelClassNodes" )
+                }
+                val (key, value) = {
+                  val parents = getParentClasses(classNode, modelNodeMap)
+                  val state = accumulateState(parents)
+                  val variables = state.map(toClassNameType).toList
+                  if (variables.length != 2) {
+                    throw new IllegalArgumentException(
+                      s"A Map variable should have two properties.  ${className} has the properties " +
+                        s"${variables.map(_.name).mkString(", ")}")
+                  }
+                  (variables(0).parameterType, variables(1).parameterType)
+                }
+                s"Map<${key}, ${value}>"
+              case _ => s"List<${className}>"
+            }
+
           case x if x.contains("..") => s"List<${className}>"
           case _ =>
             try {

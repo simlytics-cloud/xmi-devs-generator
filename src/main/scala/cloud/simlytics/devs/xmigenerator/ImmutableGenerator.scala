@@ -2,8 +2,9 @@ package cloud.simlytics.devs.xmigenerator
 
 import scala.xml.Node
 import Generator._
+import XmlParser._
 
-class ImmutableGenerator(val className: String, val pkg: String, val immutablesPkg: String, val variables: List[String], val isSimState: Boolean = false) {
+class ImmutableGenerator(val className: String, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], val isSimState: Boolean = false) {
 
   def buildHeader(): String = {
     val immutable: String = isSimState match {
@@ -15,6 +16,7 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
        |
        |import ${immutablesPkg}.*;
        |import java.util.List;
+       |import java.util.Map;
        |import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
        |import com.fasterxml.jackson.databind.annotation.JsonSerialize;
        |import org.immutables.value.Value;
@@ -28,8 +30,8 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
 
   def buildMethods(): String = {
     variables.map { v =>
-      val (typeName, varName) = splitTypeAndName(v)
-      s"    public abstract ${typeName} get${upperFirstLetter(varName)}();"
+      val comment = buildComment(v.comment)
+      s"${comment}    public abstract ${v.parameterType} get${upperFirstLetter(v.name)}();"
     }.mkString("\n")
   };
 
@@ -41,10 +43,9 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
        |        ${className} updated${className} = ${className}.copyOf(this);
        |${
       variables.map { v =>
-        val (typeName, varName) = splitTypeAndName(v)
-        val condition =         s"        if (${lowerFirstLetter(className)}.get${upperFirstLetter(varName)}() != null) {\n"
+        val condition =         s"        if (${lowerFirstLetter(className)}.get${upperFirstLetter(v.name)}() != null) {\n"
         val updateLine =
-            s"            updated${className} = updated$className.with${upperFirstLetter(varName)}(${lowerFirstLetter(className)}.get${upperFirstLetter(varName)}());\n        }"
+            s"            updated${className} = updated$className.with${upperFirstLetter(v.name)}(${lowerFirstLetter(className)}.get${upperFirstLetter(v.name)}());\n        }"
         condition + updateLine + "\n"
       }.mkString("\n")}
        |        return updated${className};

@@ -3,7 +3,7 @@ package cloud.simlytics.devs.xmigenerator
 import cloud.simlytics.devs.xmigenerator.Generator._
 
 class CoupledModelGenerator(pkg: String, val immutablesPkg: String, val coupledModelName: String, timeType: String,
-                            val ports: List[String],
+                            val ports: List[Parameter],
                             subordinateAtomicModels: List[String], subordinateCoupledModels: List[String]) {
 
   def buildHeader(): String = {
@@ -128,9 +128,8 @@ class CoupledModelGenerator(pkg: String, val immutablesPkg: String, val coupledM
 
   def buildPorts(): String = {
     ports.map { port =>
-      val (portType, portName) = splitTypeAndName(port)
-      s"    public static Port<${portType}> ${lowerFirstLetter(portName)} = " +
-        s"new Port<>(\"${camelToUnderscores(upperFirstLetter(portName)).toUpperCase}\");"
+      s"${buildComment(port.comment)}    public static Port<${port.parameterType}> ${lowerFirstLetter(port.name)} = " +
+        s"new Port<>(\"${camelToUnderscores(upperFirstLetter(port.name)).toUpperCase}\");"
 
     }.mkString("\n") + "\n"
   }

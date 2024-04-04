@@ -48,4 +48,8 @@ object Generator {
     }
     typeAndName(0) -> typeAndName(1)
   }
+
+  def buildComment(commentOption: Option[String]): String = {
+    commentOption.map(comment => s"    /**\n    * ${comment}\n     */\n").getOrElse("")
+  }
 }
