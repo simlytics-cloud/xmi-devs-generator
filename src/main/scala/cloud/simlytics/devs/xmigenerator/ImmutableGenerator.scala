@@ -4,12 +4,22 @@ import scala.xml.Node
 import Generator._
 import XmlParser._
 
-class ImmutableGenerator(val className: String, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], val isSimState: Boolean = false) {
+class ImmutableGenerator(val className: String, isAbstract: Boolean, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], val isSimState: Boolean = false, superclass: Option[String] = None) {
 
   def buildHeader(): String = {
-    val immutable: String = isSimState match {
-      case false => "@Value.Immutable"
-      case true => "@Value.Immutable\n@Value.Modifiable"
+    val immutable: String = isAbstract match {
+      case true => ""
+      case false =>
+        isSimState match {
+          case false =>
+            "@Value.Immutable\n" +
+              s"@JsonSerialize(as = ${className}.class)\n" +
+              s"@JsonDeserialize(as = ${className}.class)"
+          case true =>
+            "@Value.Immutable\n@Value.Modifiable\n" +
+            s"@JsonSerialize(as = ${className}.class)\n" +
+            s"@JsonDeserialize(as = ${className}.class)"
+      }
     }
     s"""
        |package ${pkg};
@@ -23,8 +33,6 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
        |import javax.annotation.Nullable;
        |
        |${immutable}
-       |@JsonSerialize(as = ${className}.class)
-       |@JsonDeserialize(as = ${className}.class)
        |""".stripMargin
   }
 
@@ -55,9 +63,13 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
   }
 
   def build(): String = {
+    val abstractString = isAbstract match {
+      case true => ""
+      case false => "Abstract"
+    }
     s"""
        |${buildHeader()}
-       |public abstract class Abstract${className} {
+       |public abstract class ${abstractString}${className} ${superclass.map(sc => s"extends ${sc}").getOrElse("")} {
        |
        |${buildMethods()}
        |}

@@ -1,6 +1,6 @@
 package cloud.simlytics.devs.xmigenerator
 
-case class ItemFlow(fromModel: String, fromPort: String, toModel: String, toPort: String, toPortType: String)
+case class ItemFlow(fromModel: String, fromPort: String, fromPortType: String, toModel: String, toPort: String, toPortType: String)
 
 class CouplingsGenerator(val pkg: String, val basePackage: String, val immutablesPkg: String, val coupledModelName: String, flows: List[ItemFlow], val subordinateCoupledModels: List[String]) {
   val coupledModelImports: String = subordinateCoupledModels.map { m =>
@@ -51,17 +51,21 @@ class CouplingsGenerator(val pkg: String, val basePackage: String, val immutable
   def buildDetermineTargetModel(): String = {
     val cases = flows.map { flow =>
       s"            case \"${flow.toPort}\" -> ${flow.toModel}.modelIdentifier;"
-    }.mkString("\n")
-    s"""
-       |    protected String determineTargetModel(PortValue<?> fromPortValue) {
-       |        return switch (fromPortValue.getPortIdentifier()) {
-       |${cases}
-       |            default -> throw new IllegalArgumentException(
-       |                    "Could not identify target model from PortValue with identifier " +
-       |                            fromPortValue.getPortIdentifier());
-       |        };
-       |    }
-       |""".stripMargin
+    }.distinct.mkString("\n")
+    if (cases.isEmpty) {
+      ""
+    } else {
+      s"""
+         |    protected String determineTargetModel(PortValue<?> fromPortValue) {
+         |        return switch (fromPortValue.getPortIdentifier()) {
+         |${cases}
+         |            default -> throw new IllegalArgumentException(
+         |                    "Could not identify target model from PortValue with identifier " +
+         |                            fromPortValue.getPortIdentifier());
+         |        };
+         |    }
+         |""".stripMargin
+    }
   }
 
   def buildOutputCouplingFlows(): String = {

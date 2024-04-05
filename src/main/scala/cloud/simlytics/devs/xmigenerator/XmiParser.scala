@@ -2,6 +2,7 @@ package cloud.simlytics.devs.xmigenerator
 
 import cloud.simlytics.devs.xmigenerator.*
 
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import scala.annotation.tailrec
@@ -16,7 +17,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
   def buildDir(pkg: String): String = {
     val dir = generatorSourceDir + "/main/java/" + pkg.replace('.', '/') + "/"
     if (!Files.exists(Paths.get(dir))) {
-      Files.createDirectory(Paths.get(dir))
+      new File(dir).mkdirs()
     }
     dir
   }
@@ -152,6 +153,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
           attributeValue(fromModelNode, "name")
         },
         fromPort = lowerFirstLetter(attributeValue(fromPortNode, "name")),
+        fromPortType = modelClassIdMap(attributeValue(fromPortNode, "type")),
         toModel = {
           //modelClassIdMap(attributeValue(getParentClass(toPortNode), "xmi:id"))
           val toModelNode = (subordinateModels ++ coupledModelNode).find { model =>
@@ -163,7 +165,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
           attributeValue(toModelNode, "name")
         },
         toPort = lowerFirstLetter(attributeValue(toPortNode, "name")),
-        toPortType = modelClassIdMap(attributeValue(flowNode, "conveyed"))
+        toPortType = modelClassIdMap(attributeValue(toPortNode, "type"))
       )
     }
 
@@ -226,19 +228,19 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     }
 
     val pendingOutputPortVariables = modelOutputFlows.map(f =>
-      Parameter(s"List<${f.toPortType}>", s"pending${upperFirstLetter(f.fromPort)}Out")).toList
+      Parameter(s"List<${f.fromPortType}>", s"pending${upperFirstLetter(f.fromPort)}Out")).toList
 
     val modelStateParameters = modelState.map(toClassNameType(_)).toList ++ pendingOutputPortVariables
 
     println(s"${modelName} Java internal state variables:")
     modelStateParameters.foreach(node => println(_))
-    val stateGenerator = new ImmutableGenerator(modelName + "State", modelPackage, immutablesPkg,
+    val stateGenerator = new ImmutableGenerator(modelName + "State", false, modelPackage, immutablesPkg,
       modelStateParameters, true)
     generateImmutable(stateGenerator, modelDirectory)
 
     println(s"${modelName} Java Properties:")
     modelProperties.foreach(node => println(toClassNameType(node)))
-    val propertiesGenerator = new ImmutableGenerator(modelName + "Properties", modelPackage, immutablesPkg,
+    val propertiesGenerator = new ImmutableGenerator(modelName + "Properties", false, modelPackage, immutablesPkg,
       modelProperties.map(toClassNameType(_)).toList)
     generateImmutable(propertiesGenerator, modelDirectory)
 
@@ -292,10 +294,17 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       val className = attributeValueOption(modelNode, "name").getOrElse {
         throw new IllegalArgumentException("Model node has no \"name\" attribute.\n" + modelNode)
       }
-      val parents = getParentClasses(modelNode, modelNodeMap)
-      val state = accumulateState(parents)
+      val parent: Option[String] = getParentClass(modelNode, modelNodeMap).flatMap {
+        parentNode =>
+          attributeValueOption(parentNode, "isAbstract") match {
+            case Some("true") => attributeValueOption(parentNode, "name")
+            case _ => attributeValueOption(parentNode, "name").map("Abstract" + _)
+          }
+      }
+      val isAbstract: Boolean = attributeValueOption(modelNode, "isAbstract").contains("true")
+      val state = accumulateState(Seq(modelNode))
       val variables = state.map(toClassNameType(_)).toList
-      val generator = ImmutableGenerator(className = className, pkg = immutablePackage, immutablesPkg, variables = variables)
+      val generator = ImmutableGenerator(className = className, isAbstract = isAbstract, pkg = immutablePackage, immutablesPkg, variables = variables, superclass = parent)
       generateImmutable(generator, immutablesDir)
     }
   }
@@ -328,8 +337,19 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     }
   }
 
-  def getParentClass(currentNode: Node): Node = {
-    modelNodeMap.values.filter(n => n.child.contains(currentNode)).head
+  def getParentClass(currentNode: Node, nodeMap: Map[String, Node]): Option[Node] = {
+    val generalizations: collection.Seq[Node] = (currentNode \ "generalization")
+      .filter(n => {
+        n.attributes.asAttrMap.contains("general") || (n \ "general").nonEmpty
+      }).map { n =>
+        n.attributes.asAttrMap.contains("general") match {
+          case true => nodeMap.get(attributeValueOption(n, "general").get)
+          case false =>
+            val id = attributeValue((n \ "general").head, "href").split("#").last
+            nodeMap.get(id)
+        }
+      }.flatten
+    generalizations.headOption
   }
 
   def getParentClasses(baseNode: Node, nodeMap: Map[String, Node]): collection.Seq[Node] = {
