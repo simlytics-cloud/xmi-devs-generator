@@ -45,6 +45,10 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
   }
 
   def buildHeader() = {
+    val scheduleImport = stateVariables.map(_.parameterType).find(s => s.startsWith("Schedule<")) match {
+      case Some(_) => "\nimport devs.util.Schedule;"
+      case None => ""
+    }
     s"""
        |package ${pkg};
        |
@@ -55,7 +59,7 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
        |import devs.msg.time.${timeType};
        |import devs.PDEVSModel;
        |import java.util.List;
-       |import java.util.ArrayList;
+       |import java.util.ArrayList;${scheduleImport}
        |""".stripMargin
   }
 

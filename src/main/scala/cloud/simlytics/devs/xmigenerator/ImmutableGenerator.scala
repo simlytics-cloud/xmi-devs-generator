@@ -11,6 +11,9 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
       case false => "@Value.Immutable"
       case true => "@Value.Immutable\n@Value.Modifiable"
     }
+    val scheduleImport = variables.map(_.parameterType).find(s => s.startsWith("Schedule<")) match {
+      case Some(_) => "import devs.util.Schedule;"
+    }
     s"""
        |package ${pkg};
        |
@@ -21,6 +24,7 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
        |import com.fasterxml.jackson.databind.annotation.JsonSerialize;
        |import org.immutables.value.Value;
        |import javax.annotation.Nullable;
+       |${scheduleImport}
        |
        |${immutable}
        |@JsonSerialize(as = ${className}.class)

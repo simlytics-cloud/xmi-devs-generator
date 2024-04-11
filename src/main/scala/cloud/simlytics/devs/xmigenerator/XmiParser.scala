@@ -479,7 +479,11 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
         }
     }
     val comment: Option[String] = (propertyNode \ "ownedComment" \ "body").headOption.map(_.text)
-    Parameter(propertyClass, propertyName, comment)
+    val updatedPropertyName: String = propertyName match {
+      case "Schedule" => s"Schedule<${timeType}>"
+      case _ => propertyName
+    }
+    Parameter(propertyClass, updatedPropertyName, comment)
   }
 
   /**
