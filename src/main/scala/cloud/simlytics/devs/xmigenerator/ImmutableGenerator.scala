@@ -4,22 +4,12 @@ import scala.xml.Node
 import Generator._
 import XmlParser._
 
-class ImmutableGenerator(val className: String, isAbstract: Boolean, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], val isSimState: Boolean = false, superclass: Option[String] = None) {
+class ImmutableGenerator(val className: String, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], val isSimState: Boolean = false, superclass: Option[String] = None) {
 
   def buildHeader(): String = {
-    val immutable: String = isAbstract match {
-      case true => ""
-      case false =>
-        isSimState match {
-          case false =>
-            "@Value.Immutable\n" +
-              s"@JsonSerialize(as = ${className}.class)\n" +
-              s"@JsonDeserialize(as = ${className}.class)"
-          case true =>
-            "@Value.Immutable\n@Value.Modifiable\n" +
-            s"@JsonSerialize(as = ${className}.class)\n" +
-            s"@JsonDeserialize(as = ${className}.class)"
-      }
+    val immutable: String = isSimState match {
+      case false => "@Value.Immutable"
+      case true => "@Value.Immutable\n@Value.Modifiable"
     }
     s"""
        |package ${pkg};
@@ -33,6 +23,8 @@ class ImmutableGenerator(val className: String, isAbstract: Boolean, val pkg: St
        |import javax.annotation.Nullable;
        |
        |${immutable}
+       |@JsonSerialize(as = ${className}.class)
+       |@JsonDeserialize(as = ${className}.class)
        |""".stripMargin
   }
 
@@ -63,13 +55,9 @@ class ImmutableGenerator(val className: String, isAbstract: Boolean, val pkg: St
   }
 
   def build(): String = {
-    val abstractString = isAbstract match {
-      case true => ""
-      case false => "Abstract"
-    }
     s"""
        |${buildHeader()}
-       |public abstract class ${abstractString}${className} ${superclass.map(sc => s"extends ${sc}").getOrElse("")} {
+       |public abstract class Abstract${className} ${superclass.map(sc => s"extends ${sc}").getOrElse("")} {
        |
        |${buildMethods()}
        |}

@@ -234,13 +234,13 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
     println(s"${modelName} Java internal state variables:")
     modelStateParameters.foreach(node => println(_))
-    val stateGenerator = new ImmutableGenerator(modelName + "State", false, modelPackage, immutablesPkg,
+    val stateGenerator = new ImmutableGenerator(modelName + "State", modelPackage, immutablesPkg,
       modelStateParameters, true)
     generateImmutable(stateGenerator, modelDirectory)
 
     println(s"${modelName} Java Properties:")
     modelProperties.foreach(node => println(toClassNameType(node)))
-    val propertiesGenerator = new ImmutableGenerator(modelName + "Properties", false, modelPackage, immutablesPkg,
+    val propertiesGenerator = new ImmutableGenerator(modelName + "Properties", modelPackage, immutablesPkg,
       modelProperties.map(toClassNameType(_)).toList)
     generateImmutable(propertiesGenerator, modelDirectory)
 
@@ -282,6 +282,13 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       fileContents.getBytes(StandardCharsets.UTF_8))
   }
 
+  def generateAbstractClass(abstractClassGenerator: AbstractClassGenerator, directory: String): Unit = {
+    val fileContents = abstractClassGenerator.build();
+    println(fileContents)
+    Files.write(Paths.get(directory + abstractClassGenerator.className + ".java"),
+      fileContents.getBytes(StandardCharsets.UTF_8))
+  }
+
   def generatePlainImmutables(): Unit = {
     val immutablePackage = basePackage + ".immutables"
     val immutablesDir = buildDir(immutablePackage)
@@ -304,8 +311,16 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       val isAbstract: Boolean = attributeValueOption(modelNode, "isAbstract").contains("true")
       val state = accumulateState(Seq(modelNode))
       val variables = state.map(toClassNameType(_)).toList
-      val generator = ImmutableGenerator(className = className, isAbstract = isAbstract, pkg = immutablePackage, immutablesPkg, variables = variables, superclass = parent)
-      generateImmutable(generator, immutablesDir)
+      
+      isAbstract match {
+        case false =>
+          val generator = ImmutableGenerator(className = className, pkg = immutablePackage, immutablesPkg, variables = variables, false, parent)
+          generateImmutable(generator, immutablesDir)
+        case true =>
+          val generator = AbstractClassGenerator(className = className, pkg = immutablesPkg, immutablesPkg, variables = variables, parent)
+          generateAbstractClass(generator, immutablesDir)
+      }
+
     }
   }
 
