@@ -12,6 +12,8 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
                      inputPorts: List[Parameter], outputPorts: List[Parameter], ownedOperations: List[OwnedOperation],
                      modelCommentOption: Option[String] = None) {
 
+  // This method is not used.  Potentially delete it.  The current implementation builds internal state as a
+  //  Modifiable immutable.  This allows JSON serialization of internal state to be used at model initialization.
   def buildInternalState(variables: List[Parameter], internalClassName: String): String = {
 
     val vars = variables.map { v =>
@@ -45,8 +47,9 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
   }
 
   def buildHeader() = {
+    // Importing a schedule will only be necessary if the buildInternalState method is used.  Currently, it is not.
     val scheduleImport = stateVariables.map(_.parameterType).find(s => s.startsWith("Schedule<")) match {
-      case Some(_) => "\nimport devs.util.Schedule;"
+      case Some(_) => s"\nimport devs.utils.Schedule;\nimport devs.msg.time.${timeType};"
       case None => ""
     }
     s"""
@@ -59,7 +62,7 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
        |import devs.msg.time.${timeType};
        |import devs.PDEVSModel;
        |import java.util.List;
-       |import java.util.ArrayList;${scheduleImport}
+       |import java.util.ArrayList;
        |""".stripMargin
   }
 
@@ -107,7 +110,7 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
   def buildOutputFunction(): String = {
 
     s"""    @Override
-       |    protected Bag outputFunction() {
+       |    public Bag outputFunction() {
        |        Bag.Builder bagBuilder = Bag.builder();
        |        bagBuilder.addAllPortValueList(getPendingOutput());
        |        return bagBuilder.build();

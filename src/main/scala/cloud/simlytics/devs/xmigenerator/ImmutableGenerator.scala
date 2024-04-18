@@ -4,7 +4,7 @@ import scala.xml.Node
 import Generator._
 import XmlParser._
 
-class ImmutableGenerator(val className: String, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], val isSimState: Boolean = false, superclass: Option[String] = None) {
+class ImmutableGenerator(val className: String, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], val timeType: String, val isSimState: Boolean = false, superclass: Option[String] = None) {
 
   def buildHeader(): String = {
     val immutable: String = isSimState match {
@@ -12,7 +12,8 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
       case true => "@Value.Immutable\n@Value.Modifiable"
     }
     val scheduleImport = variables.map(_.parameterType).find(s => s.startsWith("Schedule<")) match {
-      case Some(_) => "import devs.util.Schedule;"
+      case Some(_) => s"\nimport devs.utils.Schedule;\nimport devs.msg.time.${timeType};"
+      case None => ""
     }
     s"""
        |package ${pkg};
@@ -23,8 +24,7 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
        |import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
        |import com.fasterxml.jackson.databind.annotation.JsonSerialize;
        |import org.immutables.value.Value;
-       |import javax.annotation.Nullable;
-       |${scheduleImport}
+       |import javax.annotation.Nullable;${scheduleImport}
        |
        |${immutable}
        |@JsonSerialize(as = ${className}.class)

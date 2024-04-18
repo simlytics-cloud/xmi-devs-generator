@@ -235,13 +235,13 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     println(s"${modelName} Java internal state variables:")
     modelStateParameters.foreach(node => println(_))
     val stateGenerator = new ImmutableGenerator(modelName + "State", modelPackage, immutablesPkg,
-      modelStateParameters, true)
+      modelStateParameters, timeType, true)
     generateImmutable(stateGenerator, modelDirectory)
 
     println(s"${modelName} Java Properties:")
     modelProperties.foreach(node => println(toClassNameType(node)))
     val propertiesGenerator = new ImmutableGenerator(modelName + "Properties", modelPackage, immutablesPkg,
-      modelProperties.map(toClassNameType(_)).toList)
+      modelProperties.map(toClassNameType(_)).toList, timeType)
     generateImmutable(propertiesGenerator, modelDirectory)
 
     val operations: List[OwnedOperation] = accumulateOperations(modelParents).map { node =>
@@ -314,7 +314,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       
       isAbstract match {
         case false =>
-          val generator = ImmutableGenerator(className = className, pkg = immutablePackage, immutablesPkg, variables = variables, false, parent)
+          val generator = ImmutableGenerator(className = className, pkg = immutablePackage, immutablesPkg, variables = variables, timeType, false, parent)
           generateImmutable(generator, immutablesDir)
         case true =>
           val generator = AbstractClassGenerator(className = className, pkg = immutablesPkg, immutablesPkg, variables = variables, parent)
@@ -479,11 +479,11 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
         }
     }
     val comment: Option[String] = (propertyNode \ "ownedComment" \ "body").headOption.map(_.text)
-    val updatedPropertyName: String = propertyName match {
+    val updatedPropertyClass: String = propertyClass match {
       case "Schedule" => s"Schedule<${timeType}>"
-      case _ => propertyName
+      case _ => propertyClass
     }
-    Parameter(propertyClass, updatedPropertyName, comment)
+    Parameter(updatedPropertyClass, propertyName, comment)
   }
 
   /**
