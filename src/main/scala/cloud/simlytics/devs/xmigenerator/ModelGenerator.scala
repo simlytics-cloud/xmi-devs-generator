@@ -113,6 +113,7 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
        |    public Bag outputFunction() {
        |        Bag.Builder bagBuilder = Bag.builder();
        |        bagBuilder.addAllPortValueList(getPendingOutput());
+       |        clearPendingOutput();
        |        return bagBuilder.build();
        |    }
        |""".stripMargin

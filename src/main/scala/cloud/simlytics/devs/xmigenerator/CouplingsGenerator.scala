@@ -22,9 +22,9 @@ class CouplingsGenerator(val pkg: String, val basePackage: String, val immutable
        |                                Map<String, List<PortValue<?>>> receiverMap,
        |                                List<PortValue<?>> outputMessages) {
        |
-       |${buildOutputCouplingFlows()}
+       |        ${buildOutputCouplingFlows()}
        |    }
-       |${buildDetermineTargetModel()}
+       |${builddetermineTargetModels()}
        |}
        |""".stripMargin
   }
@@ -41,22 +41,22 @@ class CouplingsGenerator(val pkg: String, val basePackage: String, val immutable
        |    @Override
        |    public void handlePortValue(PortValue<?> portValue, Map<String, List<PortValue<?>>> receiverMap) {
        |
-       |${buildInputCouplingFlows()}
+       |        ${buildInputCouplingFlows()}
        |    }
-       |${buildDetermineTargetModel()}
+       |${builddetermineTargetModels()}
        |}
        |""".stripMargin
   }
 
-  def buildDetermineTargetModel(): String = {
+  def builddetermineTargetModels(): String = {
     val cases = flows.map { flow =>
-      s"            case \"${flow.toPort}\" -> ${flow.toModel}.modelIdentifier;"
+      s"            case \"${flow.fromPort}\" -> new String[] {${flow.toModel}.modelIdentifier};"
     }.distinct.mkString("\n")
     if (cases.isEmpty) {
       ""
     } else {
       s"""
-         |    protected String determineTargetModel(PortValue<?> fromPortValue) {
+         |    protected String[] determineTargetModels(PortValue<?> fromPortValue) {
          |        return switch (fromPortValue.getPortIdentifier()) {
          |${cases}
          |            default -> throw new IllegalArgumentException(
@@ -69,33 +69,61 @@ class CouplingsGenerator(val pkg: String, val basePackage: String, val immutable
   }
 
   def buildOutputCouplingFlows(): String = {
-    flows.filter(_.fromModel != coupledModelName)  // Filter out inputs to coupled model
-      .map { flow =>
-      val flowRouting: String = (flow.toModel == coupledModelName) match {
-        case true =>
-          "outputMessages.add(flowPortValue);"  // Add flow to outputs
-        case false => // Route to correct internal model via receiverMap
-          s"addInputPortValue(flowPortValue, determineTargetModel(portValue), receiverMap);"
-      }
-      s"""        if (portValue.getPortIdentifier().equals(${flow.fromModel}.${flow.fromPort}.getPortIdentifier())) {
-         |            PortValue<${flow.toPortType}> flowPortValue = ${flow.toModel}.${flow.toPort}.createPortValue(
-         |                ${flow.fromModel}.${flow.fromPort}.getValue(portValue));
-         |            ${flowRouting}
-         |        }
-         |""".stripMargin
-    }.mkString("\n")
+    val outputFlows = flows.filter(_.fromModel != coupledModelName)
+    outputFlows.isEmpty match {
+      case true =>
+        ""
+      case false =>
+        outputFlows.map { flow =>
+          val flowRouting: String = (flow.toModel == coupledModelName) match {
+            case true =>
+              "outputMessages.add(flowPortValue);" // Add flow to outputs
+            case false => // Route to correct internal model via receiverMap
+              s"""
+                 |            String[] targetModels = determineTargetModels(portValue);
+                 |            for (String targetModel: targetModels) {
+                 |                addInputPortValue(flowPortValue, targetModel, receiverMap);
+                 |            }
+                 |""".stripMargin
+          }
+          s"""if (portValue.getPortIdentifier().equals(${flow.fromModel}.${flow.fromPort}.getPortIdentifier())) {
+             |            PortValue<${flow.toPortType}> flowPortValue = ${flow.toModel}.${flow.toPort}.createPortValue(
+             |                ${flow.fromModel}.${flow.fromPort}.getValue(portValue));
+             |            ${flowRouting}
+             |        }""".stripMargin
+        }.mkString(" else ") +
+          """
+            |        else {
+            |            throw new IllegalArgumentException("Could not handle PortValue with identifier " + portValue.getPortIdentifier());
+            |        }
+            |""".stripMargin
+    }
+
   }
 
   def buildInputCouplingFlows(): String = {
-    flows.filter(_.fromModel == coupledModelName)
-      .map { flow =>
-        s"""        if (portValue.getPortIdentifier().equals(${flow.fromModel}.${flow.fromPort}.getPortIdentifier())) {
-           |            PortValue<${flow.toPortType}> flowPortValue = ${flow.toModel}.${flow.toPort}.createPortValue(
-           |                ${flow.fromModel}.${flow.fromPort}.getValue(portValue));
-           |            addInputPortValue(flowPortValue, determineTargetModel(portValue), receiverMap);
-           |        }
-           |""".stripMargin
-      }.mkString("\n")
+    val inputFlows = flows.filter(_.fromModel == coupledModelName)
+    inputFlows.isEmpty match {
+      case true =>
+        ""
+      case false =>
+        inputFlows.map { flow =>
+          s"""if (portValue.getPortIdentifier().equals(${flow.fromModel}.${flow.fromPort}.getPortIdentifier())) {
+             |            PortValue<${flow.toPortType}> flowPortValue = ${flow.toModel}.${flow.toPort}.createPortValue(
+             |                ${flow.fromModel}.${flow.fromPort}.getValue(portValue));
+             |            String[] targetModels = determineTargetModels(portValue);
+             |            for (String targetModel: targetModels) {
+             |                addInputPortValue(flowPortValue, targetModel, receiverMap);
+             |            }
+             |        }""".stripMargin
+        }.mkString(" else ") +
+          """
+            |        else {
+            |            throw new IllegalArgumentException("Could not handle PortValue with identifier " + portValue.getPortIdentifier());
+            |        }
+            |""".stripMargin
+    }
+
   }
 
   def buildOutputCouplingHeader(): String = {

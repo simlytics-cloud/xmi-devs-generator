@@ -40,6 +40,7 @@ class CoupledModelGenerator(pkg: String, val immutablesPkg: String, val coupledM
        |import devs.*;
        |import devs.msg.DevsMessage;
        |import devs.msg.time.${timeType};
+       |import devs.utils.ModelUtils;
        |import java.util.Collections;
        |import java.util.List;
        |import java.util.Map;
@@ -109,13 +110,15 @@ class CoupledModelGenerator(pkg: String, val immutablesPkg: String, val coupledM
        |${subordinateAtomicModels.map(m => {
       s"                build${m}s().stream().forEach(devsModel -> {\n" +
       s"                    ActorRef<DevsMessage> atomicModelRef = context.spawn(PDevsSimulator.create(\n" +
-      s"                        devsModel, t0), devsModel.getModelIdentifier());\n" +
-      s"                    modelSimulators.put(devsModel.getModelIdentifier(), atomicModelRef);\n" +
+      s"                        devsModel, t0), ModelUtils.toLegalActorName(devsModel.getModelIdentifier()));\n" +
+      s"                   context.watch(atomicModelRef);\n" +
+      s"                   modelSimulators.put(devsModel.getModelIdentifier(), atomicModelRef);\n" +
       s"                });"}
         ).mkString("\n")}
        |${subordinateCoupledModels.map(m => {
       s"                build${m}Factory().create(${coupledModelName}.modelIdentifier).entrySet().stream().forEach(entry -> {\n" +
-      s"                    ActorRef<DevsMessage> coupledModelRef = context.spawn(entry.getValue(), entry.getKey());\n" +
+      s"                    ActorRef<DevsMessage> coupledModelRef = context.spawn(entry.getValue(), ModelUtils.toLegalActorName(entry.getKey()));\n" +
+      s"                    context.watch(coupledModelRef);\n" +
       s"                    modelSimulators.put(entry.getKey(), coupledModelRef);\n" +
       s"                });"}
         ).mkString("\n")}
@@ -129,7 +132,7 @@ class CoupledModelGenerator(pkg: String, val immutablesPkg: String, val coupledM
   def buildPorts(): String = {
     ports.map { port =>
       s"${buildComment(port.comment)}    public static Port<${port.parameterType}> ${lowerFirstLetter(port.name)} = " +
-        s"new Port<>(\"${camelToUnderscores(upperFirstLetter(port.name)).toUpperCase}\");"
+        s"new Port<>(\"${lowerFirstLetter(port.name)}\");"
 
     }.mkString("\n") + "\n"
   }

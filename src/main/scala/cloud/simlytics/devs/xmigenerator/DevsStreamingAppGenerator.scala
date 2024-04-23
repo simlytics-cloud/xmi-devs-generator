@@ -41,7 +41,7 @@ def build(): String =
      |        ActorContext<Command> context = this.getContext();
      |        ActorRef<DevsLogMessage> loggingActor = context.spawn(DevsLoggingActor.create(System.out), "logger");
      |
-     |        ActorRef<DevsMessage> ${lowerFirstLetter(experimentalFrame)} = context.spawn(experimentalFrame, "${lowerFirstLetter(experimentalFrame)}");
+     |        ActorRef<DevsMessage> ${lowerFirstLetter(experimentalFrame)} = context.spawn(experimentalFrame, "ModelUtils.toLegalActorName(${lowerFirstLetter(experimentalFrame)})");
      |
      |        ActorRef<DevsMessage> rootCoordinator = context.spawn(RootCoordinator.create(
      |                LongSimTime.builder().t(0L).build(), ${lowerFirstLetter(experimentalFrame)}
