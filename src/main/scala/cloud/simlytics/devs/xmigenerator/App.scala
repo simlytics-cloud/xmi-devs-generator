@@ -1,6 +1,7 @@
 package cloud.simlytics.devs.xmigenerator
 
 import com.typesafe.config.ConfigFactory
+import scala.jdk.CollectionConverters.*
 
 /**
  * @author ${user.name}
@@ -22,8 +23,9 @@ object App {
     val modelPackage = config.getString("system.model_package")
     val basePackage = config.getString("generator.base_package")
     val generatorSourceDir = config.getString("generator.src_folder_path")
+    val otherPackages: List[String] = config.getStringList("generator.other_packages").asScala.toList
     val xmlParser = XmiParser(scala.xml.XML.loadFile(devsXmiFile),
-      scala.xml.XML.loadFile(systemXmiFile), modelPackage, basePackage, generatorSourceDir, timeType, appName)
+      scala.xml.XML.loadFile(systemXmiFile), modelPackage, basePackage, otherPackages, generatorSourceDir, timeType, appName)
   }
 
 }

@@ -9,13 +9,21 @@ import scala.annotation.tailrec
 import scala.xml.*
 
 
-class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String, basePackage: String, generatorSourceDir: String,
+class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String, basePackage: String, otherPackages: List[String], generatorSourceDir: String,
                 timeType: String, appName: String) {
   import XmlParser._
   import Generator._
 
-  def buildDir(pkg: String): String = {
+  def buildSourceDir(pkg: String): String = {
     val dir = generatorSourceDir + "/main/java/" + pkg.replace('.', '/') + "/"
+    if (!Files.exists(Paths.get(dir))) {
+      new File(dir).mkdirs()
+    }
+    dir
+  }
+
+  def buildTestDir(pkg: String): String = {
+    val dir = generatorSourceDir + "/test/java/" + pkg.replace('.', '/') + "/"
     if (!Files.exists(Paths.get(dir))) {
       new File(dir).mkdirs()
     }
@@ -41,6 +49,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
   val modelNodeMap: Map[String, Node] = buildNodeMap(modelClassNodes)
   val devsNodeMap: Map[String, Node] = buildNodeMap(devsClassNodes)
+  val allNodesMap: Map[String, Node] = modelNodeMap ++ devsNodeMap
   val modelAssociationMap: Map[String, Node] = buildNodeMap(modelAssociationNodes)
 
   val devsClassNameMap: Map[String, String] = buildClassNameMap(devsClassNodes)
@@ -48,10 +57,18 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     v -> k
   }
 
+  // A Map property interprets a two field property as a key value in a Map
   val mapProperties: List[String] = (modelFileElement \\ "Map").filter { node =>
     node.attribute("base_Property").nonEmpty
   }.map { node =>
     attributeValue(node, "base_Property")
+  }.toList
+
+  // Classes marked as building blocks are pre-existing classes that do not need to be generated
+  val buildingBlocks: List[String] = (modelFileElement \\ "BuildingBlock").filter { node =>
+    node.attribute("base_Class").nonEmpty
+  }.map { node =>
+    modelClassIdMap(attributeValue(node, "base_Class"))
   }.toList
 
   //val experimentalFrameNode = getNodesOfType(modelClassNodes, "ExperimentalFrame", devsClassNameMap).head
@@ -83,18 +100,23 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
   def generateDevsStreamingApp(experimentalFrameName: String): Unit = {
     val devsStreamingAppGenerator = new DevsStreamingAppGenerator(basePackage, appName, experimentalFrameName, timeType)
     val devsStreamingAppContent: String = devsStreamingAppGenerator.build()
-    Files.write(Paths.get(buildDir(basePackage) + appName + ".java"),
+    Files.write(Paths.get(buildSourceDir(basePackage) + appName + ".java"),
       devsStreamingAppContent.getBytes(StandardCharsets.UTF_8))
   }
 
   def generateCoupledModel(coupledModelNode: Node, parentPackage: String): Unit = {
     val coupledModelName = attributeValue(coupledModelNode, "name")
     val coupledModelPackage = parentPackage + "." + coupledModelName.toLowerCase()
-    val coupledModelDir = buildDir(coupledModelPackage)
-    val subordinateAtomicModels = (coupledModelNode \ "nestedClassifier")
-      .filter(n => getParentClassNames(n, devsNodeMap).contains("DevsAtomicModel"))
+    val coupledModelDir = buildSourceDir(coupledModelPackage)
+    val coupledModelTestDir = buildTestDir(coupledModelPackage)
+    val nestedClassifiers = (coupledModelNode \ "nestedClassifier").toList
+    val attribute = "name"
+    nestedClassifiers.foreach(n => println(s"Parents of ${attributeValue(n, attribute)} are ${getParentClassNames(n, allNodesMap)}" ))
+    val subordinateAtomicModels = nestedClassifiers
+      .filter(n => getParentClassNames(n, allNodesMap).contains("DevsAtomicModel"))
+      .filterNot(n => attributeValueOption(n, "isAbstract").contains("true"))
     val subordinateCoupledModels = (coupledModelNode \ "nestedClassifier")
-      .filter(n => getParentClassNames(n, devsNodeMap).contains("DevsCoupledModel"))
+      .filter(n => getParentClassNames(n, allNodesMap).contains("DevsCoupledModel"))
     subordinateCoupledModels.foreach(generateCoupledModel(_, coupledModelPackage))
 
     val subordinateModels = subordinateCoupledModels ++ subordinateAtomicModels
@@ -182,7 +204,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
     val modelParents = getParentClasses(coupledModelNode, modelNodeMap)
     val modelPorts = accumulatePorts(modelParents)
-    val modelPortValues = modelPorts.map(toClassNameType(_)).toList
+    val modelPortValues = modelPorts.map(toClassNameType(_, false)).toList
     val coupledModelGenerator = new CoupledModelGenerator(coupledModelPackage, immutablesPkg, coupledModelName, timeType, modelPortValues,
       subordinateModelsNames, subordinateCoupledModelNames)
     val coupledModelContent: String = coupledModelGenerator.buildModel()
@@ -203,7 +225,8 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
   def generateDevsModel(modelNode: Node, modelPackage: String, allFlows: Seq[ItemFlow]): Unit = {
     val modelName = attributeValue(modelNode, "name")
-    val modelDirectory = buildDir(modelPackage)
+    val modelDirectory = buildSourceDir(modelPackage)
+    val modelTestDirectory = buildTestDir(modelPackage)
     val modelParents = getParentClasses(modelNode, modelNodeMap)
 
     println(s"${modelName} Model Hierarchy: \n")
@@ -218,7 +241,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     modelPorts.foreach(println)
 
     println (s"${modelName} port variables:\n")
-    modelPorts.foreach(node => println(toClassNameType(node)))
+    modelPorts.foreach(node => println(toClassNameType(node, false)))
 
     val modelState = modelVariables.filter(attributeValueOption(_, "isReadOnly") != Some("true"))
     val modelProperties = modelVariables.filter(attributeValueOption(_, "isReadOnly") == Some("true"))
@@ -230,18 +253,18 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     val pendingOutputPortVariables = modelOutputFlows.map(f =>
       Parameter(s"List<${f.fromPortType}>", s"pending${upperFirstLetter(f.fromPort)}Out")).toList
 
-    val modelStateParameters = modelState.map(toClassNameType(_)).toList ++ pendingOutputPortVariables
+    val modelStateParameters = modelState.map(toClassNameType(_, true)).toList ++ pendingOutputPortVariables
 
     println(s"${modelName} Java internal state variables:")
     modelStateParameters.foreach(node => println(_))
-    val stateGenerator = new ImmutableGenerator(modelName + "State", modelPackage, immutablesPkg,
+    val stateGenerator = new ImmutableGenerator(modelName + "State", modelPackage, immutablesPkg, otherPackages,
       modelStateParameters, timeType, true)
     generateImmutable(stateGenerator, modelDirectory)
 
     println(s"${modelName} Java Properties:")
-    modelProperties.foreach(node => println(toClassNameType(node)))
-    val propertiesGenerator = new ImmutableGenerator(modelName + "Properties", modelPackage, immutablesPkg,
-      modelProperties.map(toClassNameType(_)).toList, timeType)
+    modelProperties.foreach(node => println(toClassNameType(node, false)))
+    val propertiesGenerator = new ImmutableGenerator(modelName + "Properties", modelPackage, immutablesPkg, otherPackages,
+      modelProperties.map(toClassNameType(_, false)).toList, timeType)
     generateImmutable(propertiesGenerator, modelDirectory)
 
     val operations: List[OwnedOperation] = accumulateOperations(modelParents).map { node =>
@@ -249,13 +272,13 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       val parameters: List[Parameter] = (node \ "ownedParameter")
         .filter(parameterNode => attributeValueOption(parameterNode, "direction") != Some("out"))
         .map { parameterNode =>
-        toClassNameType(parameterNode)
+        toClassNameType(parameterNode, false)
       }.toList
 
       val result: Parameter = (node \ "ownedParameter")
         .filter(node => attributeValueOption(node, "direction") == Some("out"))
         .map { parameterNode =>
-          toClassNameType(parameterNode)
+          toClassNameType(parameterNode, false)
         }.headOption.getOrElse(Parameter("void", "void"))
 
       val commentOption = (node \ "ownedComment" \ "body").headOption.map(_.text)
@@ -266,12 +289,14 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     val outputPorts = modelPorts.filter(port => modelOutputFlows.map(f => f.fromPort).contains(lowerFirstLetter(attributeValue(port, "name"))))
     val inputPorts = modelPorts.filter(port => !modelOutputFlows.map(f => f.fromPort).contains(lowerFirstLetter(attributeValue(port, "name"))))
 
-    val modelGenerator = ModelGenerator(modelName, modelPackage, immutablesPkg, timeType, modelProperties.map(toClassNameType(_)).toList,
-      modelState.map(toClassNameType(_)).toList, inputPorts.map(toClassNameType(_)).toList,
-      outputPorts.map(toClassNameType(_)).toList, operations)
+    val modelGenerator = ModelGenerator(modelName, modelPackage, immutablesPkg, timeType, modelProperties.map(toClassNameType(_, false)).toList,
+      modelState.map(toClassNameType(_, true)).toList, inputPorts.map(toClassNameType(_, false)).toList,
+      outputPorts.map(toClassNameType(_, false)).toList, operations)
     val fileContents = modelGenerator.buildModel()
     println(fileContents)
     Files.write(Paths.get(modelDirectory + modelName + ".java"), fileContents.getBytes(StandardCharsets.UTF_8))
+    val testContents = modelGenerator.buildTestClass()
+    Files.write(Paths.get(modelTestDirectory + "Abstract" + modelName + "Test.java"), testContents.getBytes(StandardCharsets.UTF_8))
 
   }
 
@@ -291,12 +316,12 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
   def generatePlainImmutables(): Unit = {
     val immutablePackage = basePackage + ".immutables"
-    val immutablesDir = buildDir(immutablePackage)
+    val immutablesDir = buildSourceDir(immutablePackage)
     modelClassNodes.filter {modelNode =>
-      val devsParents = getParentClassNames(modelNode, devsNodeMap).tail
+      val devsParents = getParentClassNames(modelNode, allNodesMap).tail.filter(n => devsClassNameMap.keySet.contains(n))
       val nodeName = attributeValueOption(modelNode, "name").get
       println(s"${nodeName} has DEVS parents " + devsParents)
-      devsParents.isEmpty
+      devsParents.isEmpty && !buildingBlocks.contains(nodeName)
     }.foreach { modelNode =>
       val className = attributeValueOption(modelNode, "name").getOrElse {
         throw new IllegalArgumentException("Model node has no \"name\" attribute.\n" + modelNode)
@@ -310,14 +335,15 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       }
       val isAbstract: Boolean = attributeValueOption(modelNode, "isAbstract").contains("true")
       val state = accumulateState(Seq(modelNode))
-      val variables = state.map(toClassNameType(_)).toList
-      
+      val variables = state.map(toClassNameType(_, false)).toList
+
       isAbstract match {
         case false =>
-          val generator = ImmutableGenerator(className = className, pkg = immutablePackage, immutablesPkg, variables = variables, timeType, false, parent)
+          val generator = ImmutableGenerator(className = className, pkg = immutablePackage, immutablesPkg, otherPackages,
+            variables = variables, timeType, true, parent)
           generateImmutable(generator, immutablesDir)
         case true =>
-          val generator = AbstractClassGenerator(className = className, pkg = immutablesPkg, immutablesPkg, variables = variables, parent)
+          val generator = AbstractClassGenerator(className = className, pkg = immutablesPkg, immutablesPkg, otherPackages, variables = variables, parent)
           generateAbstractClass(generator, immutablesDir)
       }
 
@@ -345,7 +371,9 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
   }
 
   def getParentClassNames(baseNode: Node, nodeMap: Map[String, Node]): collection.Seq[String] = {
-    getParentClasses(baseNode, nodeMap).map { node =>
+    val nodeName = attributeValueOption(baseNode, "name").getOrElse("");
+    val parentClasses = getParentClasses(baseNode, nodeMap)
+    parentClasses.map { node =>
       attributeValueOption(node, "name").getOrElse {
         throw new IllegalArgumentException("Node has no \"name\" attribute.\n" + node)
       }
@@ -368,7 +396,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
   }
 
   def getParentClasses(baseNode: Node, nodeMap: Map[String, Node]): collection.Seq[Node] = {
-    @tailrec
+    //@tailrec
     def parentAccumulator(parents: collection.Seq[Node], currentNode: Node): collection.Seq[Node] = {
       val generalizations: collection.Seq[Node] = (currentNode \ "generalization")
         .filter(n => {
@@ -381,9 +409,10 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
             nodeMap.get(id)
         }
       }.flatten
-      generalizations.headOption match {
-        case Some(parentNode) => parentAccumulator(parents :+ parentNode, parentNode)
-        case None => parents
+      generalizations.isEmpty match {
+        case false =>
+          generalizations.flatMap(g => parentAccumulator(parents :+ g, g)) //parentAccumulator(parents :+ parentNode, parentNode)
+        case true => parents
       }
     }
     parentAccumulator(collection.Seq(baseNode), baseNode)
@@ -407,7 +436,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     }
   }
 
-  def toClassNameType(propertyNode: Node): Parameter = {
+  def toClassNameType(propertyNode: Node, mutability: Boolean): Parameter = {
     val propertyName: String = attributeValueOption(propertyNode, "name").getOrElse {
       throw new IllegalArgumentException("The state node below has no \"name\" attribute.\n" + propertyNode)
     }
@@ -418,7 +447,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
         throw new IllegalArgumentException(s"No matching class for type id ${id} in the property node below:\n"
           + propertyNode)
         })
-        determineMultiplicity(propertyNode, className)
+        determineMultiplicity(propertyNode, className, mutability)
       case None =>
         (propertyNode \ "type").headOption match {
           case Some(typeNode) =>
@@ -437,7 +466,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
               case x =>
                 throw new IllegalArgumentException(s"Did not recognize primitive type ${x} in node below\n" + typeNode)
             }
-            determineMultiplicity(propertyNode, className)
+            determineMultiplicity(propertyNode, className, false)
           case None =>
             val associationId: String = attributeValueOption(propertyNode, "association") match {
               case Some(a) => a
@@ -475,7 +504,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
                 s"${propertyClassId} in modelClassNameMap\n" + associationNode)
             })
             // Determine the property collection type based on the following
-            determineMultiplicity(associationNode, className)
+            determineMultiplicity(associationNode, className, mutability)
         }
     }
     val comment: Option[String] = (propertyNode \ "ownedComment" \ "body").headOption.map(_.text)
@@ -488,14 +517,32 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
   /**
    * Returns the Java class type of a node given its cardinality.  It looks for upperValue and lowerValue elements
-   * to determine if the property represented by the node is a single value, collection, or optionally null value
+   * Uses the list of modifiable properties to determine mutability
    * @param node an XMI ownedAttribute or packagedElement representing an association for an owned attribute
    * @param className the Java class name for the property of unknown cardinality
-   * @return the type of the property based on its cardinality.  For a single value, it will be the className.
+   * @return the type of the property based on its cardinality and mutability.  For a single value, it will be the
+   *         className prepended by its mutability, if applicable.
    *         For a multiple valued collection, it will be a List of the class.
    *         For an optional value, it will be a Java Optional wrapper of the class
    */
-  def determineMultiplicity(node: Node, className: String): String = {
+  def determineMultiplicity(node: Node, className: String, mutability: Boolean): String = {
+    // Determine mutability of the property
+    val implementedClassName: String = mutability match {
+      case true =>
+        modelClassIdMap.get(className) match {
+          case Some(classId) =>
+            modelNodeMap.get(classId) match {
+              case Some(classNode) =>
+                attributeValueOption(modelNodeMap(classId), "isAbstract").contains("true") match {
+                  case true => className
+                  case false => "Modifiable" + className
+                }
+              case None => className
+            }
+          case None => className
+        }
+      case false => className
+    }
     (node \ "upperValue").headOption match {
       case Some(upperNode) =>
         val upperValue: String = attributeValueOption(upperNode, "value").getOrElse {
@@ -512,7 +559,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
                 val (key, value) = {
                   val parents = getParentClasses(classNode, modelNodeMap)
                   val state = accumulateState(parents)
-                  val variables = state.map(toClassNameType).toList
+                  val variables = state.map(toClassNameType(_, mutability)).toList
                   if (variables.length != 2) {
                     throw new IllegalArgumentException(
                       s"A Map variable should have two properties.  ${className} has the properties " +
@@ -521,23 +568,23 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
                   (variables(0).parameterType, variables(1).parameterType)
                 }
                 s"Map<${key}, ${value}>"
-              case _ => s"List<${className}>"
+              case _ => s"List<${implementedClassName}>"
             }
 
-          case x if x.contains("..") => s"List<${className}>"
+          case x if x.contains("..") => s"List<${implementedClassName}>"
           case _ =>
             try {
               if (upperValue.toInt > 1) {
-                s"List<${className}>"
+                s"List<${implementedClassName}>"
               } else {
-                className
+                implementedClassName
               }
             } catch {
               case e: Exception =>
                 throw new IllegalArgumentException("Unrecognized cardinality ")
             }
         }
-      case None => className
+      case None => implementedClassName
     }
   }
 

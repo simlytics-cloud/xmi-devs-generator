@@ -126,7 +126,11 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
         val params = op.parameters.map { p =>
           s"     * @param ${p.name} ${p.comment.getOrElse("")}\n"
         }.mkString("")
-        "    /** " +  lines + params + "     */\n"
+        val result = op.result.comment match {
+          case Some(comment) => s"     * @return ${comment}\n"
+          case None => ""
+        }
+        "    /** " +  lines + params + result + "     */\n"
       }.getOrElse("")
       val parameterList: String = op.parameters.map { p =>
         s"${p.parameterType} ${p.name}"
@@ -162,5 +166,19 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
         |}
         |""".stripMargin
 
+  }
+
+  def buildTestClass(): String = {
+    val internalState = "Modifiable" + className + "State"
+    s"""
+       |package ${pkg};
+       |
+       |public abstract class Abstract${className}Test {
+       |
+       |    protected abstract ${internalState} buildInitialState();
+       |    protected abstract ${className}Properties buildProperties();
+       |    protected abstract ${className} buildModel();
+       |}
+       |""".stripMargin
   }
 }

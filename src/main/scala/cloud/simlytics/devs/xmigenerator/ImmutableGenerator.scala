@@ -4,7 +4,7 @@ import scala.xml.Node
 import Generator._
 import XmlParser._
 
-class ImmutableGenerator(val className: String, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], val timeType: String, val isSimState: Boolean = false, superclass: Option[String] = None) {
+class ImmutableGenerator(val className: String, val pkg: String, val immutablesPkg: String, val otherPackages: List[String], val variables: List[Parameter], val timeType: String, val isSimState: Boolean = false, superclass: Option[String] = None) {
 
   def buildHeader(): String = {
     val immutable: String = isSimState match {
@@ -19,11 +19,13 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
        |package ${pkg};
        |
        |import ${immutablesPkg}.*;
+       |${otherPackages.map(p => "import " + p + ".*;").mkString("\n")}
        |import java.util.List;
        |import java.util.Map;
        |import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
        |import com.fasterxml.jackson.databind.annotation.JsonSerialize;
        |import org.immutables.value.Value;
+       |
        |import javax.annotation.Nullable;${scheduleImport}
        |
        |${immutable}

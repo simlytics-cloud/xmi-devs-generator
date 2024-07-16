@@ -5,13 +5,14 @@ import cloud.simlytics.devs.xmigenerator.XmlParser.*
 
 import scala.xml.Node
 
-class AbstractClassGenerator(val className: String, val pkg: String, val immutablesPkg: String, val variables: List[Parameter], superclass: Option[String] = None) {
+class AbstractClassGenerator(val className: String, val pkg: String, val immutablesPkg: String, val otherPackages: List[String], val variables: List[Parameter], superclass: Option[String] = None) {
 
   def buildHeader(): String = {
     s"""
        |package ${pkg};
        |
        |import ${immutablesPkg}.*;
+       |${otherPackages.map(p => "import " + p + ".*;").mkString("\n")}
        |import java.util.List;
        |import java.util.Map;
        |""".stripMargin
