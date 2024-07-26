@@ -10,7 +10,7 @@ case class OwnedOperation(name: String, parameters: List[Parameter], result: Par
 class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, timeType: String,
                      propertyVariables: List[Parameter], stateVariables: List[Parameter],
                      inputPorts: List[Parameter], outputPorts: List[Parameter], ownedOperations: List[OwnedOperation],
-                     modelCommentOption: Option[String] = None) {
+                     isAbstract: Boolean, abstractParentModel: Option[String], modelCommentOption: Option[String] = None) {
 
   // This method is not used.  Potentially delete it.  The current implementation builds internal state as a
   //  Modifiable immutable.  This allows JSON serialization of internal state to be used at model initialization.
@@ -142,19 +142,33 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
 
   def buildModel(): String = {
 
-    val internalState = "Modifiable" + className + "State"
+    val (internalState, properties) = isAbstract match {
+      case true => ("S", "P")
+      case false => ("Modifiable" + className + "State", className + "Properties")
+    }
+    val classDefinition = isAbstract match {
+      case false => abstractParentModel match {
+        case Some(parentModel) => s"public abstract class ${className} extends ${parentModel}<${properties}, ${internalState}> {"
+        case None => s"public abstract class ${className} extends PDEVSModel<${timeType}, ${internalState}> {"
+      }
+      case true => s"public abstract class ${className}<P extends Abstract${className}Properties, S extends Abstract${className}State> extends PDEVSModel<LongSimTime, S> {"
+    }
+    val superCall = abstractParentModel match {
+      case Some(parentModel) => s"super(initialState, identifier, properties)"
+      case None => "super(initialState, identifier)"
+    }
 
       s"""
         |${buildHeader()}
-        |public abstract class ${className} extends PDEVSModel<${timeType}, ${internalState}> {
+        |${classDefinition}
         |
         |public static String modelIdentifier = "${lowerFirstLetter(className)}";
         |${buildPorts()}
         |
-        |    protected ${className}Properties properties;
+        |    protected ${properties} properties;
         |
-        |    public ${className}(${internalState} initialState, String identifier, ${className}Properties properties) {
-        |        super(initialState, identifier);
+        |    public ${className}(${internalState} initialState, String identifier, ${properties} properties) {
+        |        ${superCall};
         |        this.properties = properties;
         |    }
         |
@@ -169,14 +183,17 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
   }
 
   def buildTestClass(): String = {
-    val internalState = "Modifiable" + className + "State"
+    val (internalState, properties) = isAbstract match {
+      case true => ("Abstract" + className + "State", "Abstract" + className + "Properties")
+      case false => ("Modifiable" + className + "State", className + "Properties")
+    }
     s"""
        |package ${pkg};
        |
        |public abstract class Abstract${className}Test {
        |
        |    protected abstract ${internalState} buildInitialState();
-       |    protected abstract ${className}Properties buildProperties();
+       |    protected abstract ${properties} buildProperties();
        |    protected abstract ${className} buildModel();
        |}
        |""".stripMargin

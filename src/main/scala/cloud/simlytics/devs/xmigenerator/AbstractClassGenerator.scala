@@ -27,9 +27,13 @@ class AbstractClassGenerator(val className: String, val pkg: String, val immutab
 
 
   def build(): String = {
+    val extendsClause = superclass match {
+      case Some(parentClass) => s" extends ${parentClass}"
+      case None => ""
+    }
     s"""
        |${buildHeader()}
-       |public abstract class ${className} {
+       |public abstract class ${className}${extendsClause}{
        |
        |${buildMethods()}
        |}

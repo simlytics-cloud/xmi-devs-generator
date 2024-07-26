@@ -114,7 +114,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     nestedClassifiers.foreach(n => println(s"Parents of ${attributeValue(n, attribute)} are ${getParentClassNames(n, allNodesMap)}" ))
     val subordinateAtomicModels = nestedClassifiers
       .filter(n => getParentClassNames(n, allNodesMap).contains("DevsAtomicModel"))
-      .filterNot(n => attributeValueOption(n, "isAbstract").contains("true"))
+      //.filterNot(n => attributeValueOption(n, "isAbstract").contains("true"))
     val subordinateCoupledModels = (coupledModelNode \ "nestedClassifier")
       .filter(n => getParentClassNames(n, allNodesMap).contains("DevsCoupledModel"))
     subordinateCoupledModels.foreach(generateCoupledModel(_, coupledModelPackage))
@@ -210,9 +210,10 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     val coupledModelContent: String = coupledModelGenerator.buildModel()
     Files.write(Paths.get(coupledModelDir + coupledModelName + ".java"),
       coupledModelContent.getBytes(StandardCharsets.UTF_8))
-    val coupledModelFactoryContent: String = coupledModelGenerator.buildFactory()
-    Files.write(Paths.get(coupledModelDir + "Abstract" + coupledModelName + "Factory.java"),
-      coupledModelFactoryContent.getBytes(StandardCharsets.UTF_8))
+    // Factory is now in Devs Streaming library
+    //val coupledModelFactoryContent: String = coupledModelGenerator.buildFactory()
+    //Files.write(Paths.get(coupledModelDir + "Abstract" + coupledModelName + "Factory.java"),
+      //coupledModelFactoryContent.getBytes(StandardCharsets.UTF_8))
   }
 
   def printNodeValues(nodes: Iterable[Node], value: String): String = {
@@ -225,9 +226,16 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
   def generateDevsModel(modelNode: Node, modelPackage: String, allFlows: Seq[ItemFlow]): Unit = {
     val modelName = attributeValue(modelNode, "name")
+    val isAbstract = attributeValueOption(modelNode, "isAbstract").contains("true")
     val modelDirectory = buildSourceDir(modelPackage)
     val modelTestDirectory = buildTestDir(modelPackage)
     val modelParents = getParentClasses(modelNode, modelNodeMap)
+    val abstractParentModel: Option[String] =
+      val parentModel = getParentClass(modelNode, modelNodeMap).filter(p =>
+        getParentClassNames(p, allNodesMap).contains("DevsAtomicModel"))
+      parentModel.map(n => attributeValueOption(n, "name").getOrElse(
+        throw new IllegalArgumentException("Model node has no name: " + n)
+      ))
 
     println(s"${modelName} Model Hierarchy: \n")
     modelParents.foreach(println(_))
@@ -246,8 +254,12 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     val modelState = modelVariables.filter(attributeValueOption(_, "isReadOnly") != Some("true"))
     val modelProperties = modelVariables.filter(attributeValueOption(_, "isReadOnly") == Some("true"))
 
+    val flowMatch = abstractParentModel match {
+      case Some(modelParent) => modelParent
+      case None => modelName
+    }
     val modelOutputFlows = allFlows.filter { flow =>
-      flow.fromModel == modelName
+      flow.fromModel == flowMatch
     }
 
     val pendingOutputPortVariables = modelOutputFlows.map(f =>
@@ -258,13 +270,13 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     println(s"${modelName} Java internal state variables:")
     modelStateParameters.foreach(node => println(_))
     val stateGenerator = new ImmutableGenerator(modelName + "State", modelPackage, immutablesPkg, otherPackages,
-      modelStateParameters, timeType, true)
+      modelStateParameters, timeType, true, abstractParentModel.map(modelName => s"Abstract${modelName}State"))
     generateImmutable(stateGenerator, modelDirectory)
 
     println(s"${modelName} Java Properties:")
     modelProperties.foreach(node => println(toClassNameType(node, false)))
     val propertiesGenerator = new ImmutableGenerator(modelName + "Properties", modelPackage, immutablesPkg, otherPackages,
-      modelProperties.map(toClassNameType(_, false)).toList, timeType)
+      modelProperties.map(toClassNameType(_, false)).toList, timeType, false, abstractParentModel.map(modelName => s"Abstract${modelName}Properties"))
     generateImmutable(propertiesGenerator, modelDirectory)
 
     val operations: List[OwnedOperation] = accumulateOperations(modelParents).map { node =>
@@ -291,12 +303,12 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
     val modelGenerator = ModelGenerator(modelName, modelPackage, immutablesPkg, timeType, modelProperties.map(toClassNameType(_, false)).toList,
       modelState.map(toClassNameType(_, true)).toList, inputPorts.map(toClassNameType(_, false)).toList,
-      outputPorts.map(toClassNameType(_, false)).toList, operations)
+      outputPorts.map(toClassNameType(_, false)).toList, operations, isAbstract, abstractParentModel)
     val fileContents = modelGenerator.buildModel()
     println(fileContents)
     Files.write(Paths.get(modelDirectory + modelName + ".java"), fileContents.getBytes(StandardCharsets.UTF_8))
-    val testContents = modelGenerator.buildTestClass()
-    Files.write(Paths.get(modelTestDirectory + "Abstract" + modelName + "Test.java"), testContents.getBytes(StandardCharsets.UTF_8))
+    //val testContents = modelGenerator.buildTestClass()
+    //Files.write(Paths.get(modelTestDirectory + "Abstract" + modelName + "Test.java"), testContents.getBytes(StandardCharsets.UTF_8))
 
   }
 
