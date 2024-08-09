@@ -24,7 +24,7 @@
         <project.build.directory>target</project.build.directory>
         <scala.binary.version>3</scala.binary.version>
         <jackson.version>2.14.3</jackson.version>
-        <pekko.version>1.0.1</pekko.version>
+        <pekko.version>1.0.2</pekko.version>
         <org.slf4j-version>2.0.9</org.slf4j-version>
         <ch.qos.logback-version>1.4.14</ch.qos.logback-version>
     </properties>
