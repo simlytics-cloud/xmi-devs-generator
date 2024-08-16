@@ -39,7 +39,6 @@ def build(): String =
      |
      |    protected Behavior<Command> onStart(${appName}Start start) {
      |        ActorContext<Command> context = this.getContext();
-     |        ActorRef<DevsLogMessage> loggingActor = context.spawn(DevsLoggingActor.create(System.out), "logger");
      |
      |        ActorRef<DevsMessage> ${lowerFirstLetter(experimentalFrame)} = context.spawn(experimentalFrame, "ModelUtils.toLegalActorName(${lowerFirstLetter(experimentalFrame)})");
      |

@@ -107,6 +107,27 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
        |""".stripMargin
   }
 
+  def buildModelStateAccessors(): String = {
+    isAbstract match {
+      case false =>
+    s"""
+       |    protected Modifiable${className}State modifiableState() {
+       |        return (Modifiable${className}State)modelState;
+       |    }
+       |
+       |    @Override
+       |    public Abstract${className}State getModelState() {
+       |        if (modelState instanceof Modifiable${className}State) {
+       |            return ((Modifiable${className}State)modelState).toImmutable();
+       |        } else {
+       |            return modelState;
+       |        }
+       |    }
+       |""".stripMargin
+      case true => ""
+    }
+  }
+
   def buildOutputFunction(): String = {
 
     s"""    @Override
@@ -142,14 +163,14 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
 
   def buildModel(): String = {
 
-    val (internalState, properties) = isAbstract match {
-      case true => ("S", "P")
-      case false => ("Modifiable" + className + "State", className + "Properties")
+    val (abstractState, modifiableState, properties) = isAbstract match {
+      case true => ("S", "S", "P")
+      case false => ("Abstract" + className + "State", "Modifiable" + className + "State", className + "Properties")
     }
     val classDefinition = isAbstract match {
       case false => abstractParentModel match {
-        case Some(parentModel) => s"public abstract class ${className} extends ${parentModel}<${properties}, ${internalState}> {"
-        case None => s"public abstract class ${className} extends PDEVSModel<${timeType}, ${internalState}> {"
+        case Some(parentModel) => s"public abstract class ${className} extends ${parentModel}<${properties}, ${abstractState}> {"
+        case None => s"public abstract class ${className} extends PDEVSModel<${timeType}, ${abstractState}> {"
       }
       case true => s"public abstract class ${className}<P extends Abstract${className}Properties, S extends Abstract${className}State> extends PDEVSModel<LongSimTime, S> {"
     }
@@ -167,12 +188,13 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
         |
         |    protected ${properties} properties;
         |
-        |    public ${className}(${internalState} initialState, String identifier, ${properties} properties) {
+        |    public ${className}(${modifiableState} initialState, String identifier, ${properties} properties) {
         |        ${superCall};
         |        this.properties = properties;
         |    }
         |
         |${buildOperations()}
+        |${buildModelStateAccessors()}
         |${buildHasPendingOutput()}
         |${buildGetPendingOutput()}
         |${buildClearPendingOutput()}

@@ -36,18 +36,20 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
   val devsClassNodes: collection.Seq[Node] = filterByAttributeValue((devsElement \\ "packagedElement") ++ (devsElement \\ "nestedClassifier"),
     "xmi:type", "uml:Class")
   val modelClassNodes: collection.Seq[Node] = filterByAttributeValue((modelElement \\ "packagedElement") ++ (modelElement \\ "nestedClassifier"),
-    "xmi:type", "uml:Class") ++
-    filterByAttributeValue((modelElement \\ "packagedElement") ++ (modelElement \\ "nestedClassifier"),
+    "xmi:type", "uml:Class") 
+  val modelEnumerationNodes: collection.Seq[Node] = filterByAttributeValue((modelElement \\ "packagedElement") ++ (modelElement \\ "nestedClassifier"),
       "xmi:type", "uml:Enumeration")
+  val modelObjectNodes = modelClassNodes ++ modelEnumerationNodes    
+
   val modelAssociationNodes: collection.Seq[Node] = filterByAttributeValue((modelElement \\ "packagedElement") ++ (modelElement \\ "nestedClassifier"),
     "xmi:type", "uml:Association")
 
-  val modelClassNameMap: Map[String, String] = buildClassNameMap(modelClassNodes)
+  val modelClassNameMap: Map[String, String] = buildClassNameMap(modelObjectNodes)
   val modelClassIdMap: Map[String, String] = modelClassNameMap.map { case (k, v) =>
     v -> k
   }
 
-  val modelNodeMap: Map[String, Node] = buildNodeMap(modelClassNodes)
+  val modelNodeMap: Map[String, Node] = buildNodeMap(modelObjectNodes)
   val devsNodeMap: Map[String, Node] = buildNodeMap(devsClassNodes)
   val allNodesMap: Map[String, Node] = modelNodeMap ++ devsNodeMap
   val modelAssociationMap: Map[String, Node] = buildNodeMap(modelAssociationNodes)
@@ -95,6 +97,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
   println("Model class nodes:")
   modelClassNodes.map(node => attributeValueOption(node, "name").get).foreach(println)
   generatePlainImmutables()
+  generateEnumerations()
   generateDevsStreamingApp(attributeValue(experimentalFrameNode, "name"))
 
   def generateDevsStreamingApp(experimentalFrameName: String): Unit = {
@@ -326,6 +329,13 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       fileContents.getBytes(StandardCharsets.UTF_8))
   }
 
+  def generateEnumeration(enumerationGenerator: EnumerationGenerator, directory: String): Unit = {
+    val fileContents = enumerationGenerator.build();
+    println(fileContents)
+    Files.write(Paths.get(directory + enumerationGenerator.className + ".java"),
+      fileContents.getBytes(StandardCharsets.UTF_8))
+  }
+
   def generatePlainImmutables(): Unit = {
     val immutablePackage = basePackage + ".immutables"
     val immutablesDir = buildSourceDir(immutablePackage)
@@ -359,6 +369,18 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
           generateAbstractClass(generator, immutablesDir)
       }
 
+    }
+  }
+
+  def generateEnumerations(): Unit = {
+    val immutablePackage = basePackage + ".immutables"
+    val immutablesDir = buildSourceDir(immutablePackage)
+    modelEnumerationNodes.foreach { enumerationNode =>
+      val nodeName = attributeValueOption(enumerationNode, "name").get
+      val commentOption: Option[String] = (enumerationNode \ "ownedComment" \ "body").headOption.map(_.text)
+      val literals: List[String] = (enumerationNode \ "ownedLiteral").flatMap(literal => attributeValueOption(literal, "name")).toList
+      val generator = EnumerationGenerator(nodeName, immutablesPkg, literals, commentOption)
+      generateEnumeration(generator, immutablesDir)
     }
   }
 
@@ -565,7 +587,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
             mapProperties.contains(attributeValueOption(node, "xmi:id").getOrElse("")) match {
               case true =>
                 // This property is a Map value.  It should contain two attributes, the key first, then the value
-                val classNode: Node = modelClassNodes.find(attributeValue(_, "name") == className).getOrElse {
+                val classNode: Node = modelObjectNodes.find(attributeValue(_, "name") == className).getOrElse {
                   throw new IllegalArgumentException(s"Could not fine class name ${className} in modelClassNodes" )
                 }
                 val (key, value) = {
