@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import scala.annotation.tailrec
 import scala.xml.*
+import cloud.simlytics.devs.xmigenerator.ItemFlow
 
 
 class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String, basePackage: String, otherPackages: List[String], generatorSourceDir: String,
@@ -168,26 +169,54 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
 
       ItemFlow(
         fromModel = {
-          //modelClassIdMap(attributeValue(getParentClass(fromPortNode), "xmi:id"))
-          val fromModelNode: Node = (subordinateModels ++ coupledModelNode).find { model =>
-            accumulatePorts(getParentClasses(model, modelNodeMap)).map(attributeValue(_, "xmi:id"))
-              .contains(attributeValue(fromPortNode, "xmi:id"))
-          }.getOrElse {
-            throw new IllegalArgumentException(s"Could not find model for port ${attributeValue(fromPortNode, "name")}")
+          val parentClass: Option[Node] = getOwningClass(fromPortNode)
+          val coupledModelParent: Option[Node] = coupledModelNode.find { model =>
+              accumulatePorts(getParentClasses(model, modelNodeMap)).map(attributeValue(_, "xmi:id"))
+                .contains(attributeValue(fromPortNode, "xmi:id"))
           }
-          attributeValue(fromModelNode, "name")
+          val fromModelParent: Node = parentClass match {
+            case Some(p) => p
+            case None =>
+              coupledModelParent match {
+                case Some(p) => p
+                case None => 
+                  throw new IllegalArgumentException(s"Could not find model for port ${attributeValue(fromPortNode, "name")}")
+              }
+          }
+          modelClassIdMap(attributeValue(fromModelParent, "xmi:id"))
+          // val fromModelNode: Node = (subordinateModels ++ coupledModelNode).find { model =>
+          //   accumulatePorts(getParentClasses(model, modelNodeMap)).map(attributeValue(_, "xmi:id"))
+          //     .contains(attributeValue(fromPortNode, "xmi:id"))
+          // }.getOrElse {
+          //   throw new IllegalArgumentException(s"Could not find model for port ${attributeValue(fromPortNode, "name")}")
+          // }
+          // attributeValue(fromModelNode, "name")
         },
         fromPort = lowerFirstLetter(attributeValue(fromPortNode, "name")),
         fromPortType = modelClassIdMap(attributeValue(fromPortNode, "type")),
         toModel = {
-          //modelClassIdMap(attributeValue(getParentClass(toPortNode), "xmi:id"))
-          val toModelNode = (subordinateModels ++ coupledModelNode).find { model =>
-            accumulatePorts(getParentClasses(model, modelNodeMap)).map(attributeValue(_, "xmi:id"))
-              .contains(attributeValue(toPortNode, "xmi:id"))
-          }.getOrElse {
-            throw new IllegalArgumentException(s"Could not find model for port ${attributeValue(fromPortNode, "name")}")
+          val parentClass: Option[Node] = getOwningClass(toPortNode)
+          val coupledModelParent: Option[Node] = coupledModelNode.find { model =>
+              accumulatePorts(getParentClasses(model, modelNodeMap)).map(attributeValue(_, "xmi:id"))
+                .contains(attributeValue(toPortNode, "xmi:id"))
           }
-          attributeValue(toModelNode, "name")
+          val toModelParent: Node = parentClass match {
+            case Some(p) => p
+            case None =>
+              coupledModelParent match {
+                case Some(p) => p
+                case None => 
+                  throw new IllegalArgumentException(s"Could not find model for port ${attributeValue(toPortNode, "name")}")
+              }
+          }
+          modelClassIdMap(attributeValue(toModelParent, "xmi:id"))
+          // val toModelNode = (subordinateModels ++ coupledModelNode).find { model =>
+          //   accumulatePorts(getParentClasses(model, modelNodeMap)).map(attributeValue(_, "xmi:id"))
+          //     .contains(attributeValue(toPortNode, "xmi:id"))
+          // }.getOrElse {
+          //   throw new IllegalArgumentException(s"Could not find model for port ${attributeValue(toPortNode, "name")}")
+          // }
+          // attributeValue(toModelNode, "name")
         },
         toPort = lowerFirstLetter(attributeValue(toPortNode, "name")),
         toPortType = modelClassIdMap(attributeValue(toPortNode, "type"))
@@ -402,6 +431,10 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
       filterByAttributeValue((classNode \ "generalization" \ "general"), "href",
         "DEVSFramework.uml#" + devsClassNameMap(nodeType)).nonEmpty
     })
+  }
+
+  def getOwningClass(childNode: Node): Option[Node] = {
+    modelClassNodes.find(n => n.child.contains(childNode))
   }
 
   def getParentClassNames(baseNode: Node, nodeMap: Map[String, Node]): collection.Seq[String] = {
