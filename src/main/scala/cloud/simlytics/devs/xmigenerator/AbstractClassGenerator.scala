@@ -15,6 +15,12 @@ class AbstractClassGenerator(val className: String, val pkg: String, val immutab
        |${otherPackages.map(p => "import " + p + ".*;").mkString("\n")}
        |import java.util.List;
        |import java.util.Map;
+       |import com.fasterxml.jackson.annotation.JsonTypeInfo;
+       |@JsonTypeInfo(
+       |    use = JsonTypeInfo.Id.CLASS,
+       |    include = JsonTypeInfo.As.PROPERTY,
+       |    property = "@class"
+       |)
        |""".stripMargin
   }
 
