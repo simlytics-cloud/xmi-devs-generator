@@ -6,6 +6,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import scala.annotation.tailrec
+import scala.language.postfixOps
 import scala.xml.*
 import cloud.simlytics.devs.xmigenerator.ItemFlow
 
@@ -297,7 +298,7 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
     val pendingOutputPortVariables = modelOutputFlows.map(f =>
       Parameter(s"List<${f.fromPortType}>", s"pending${upperFirstLetter(f.fromPort)}Out")).toList
 
-    val modelStateParameters = modelState.map(toClassNameType(_, true)).toList ++ pendingOutputPortVariables
+    val modelStateParameters = (modelState.map(toClassNameType(_, true)).toList ++ pendingOutputPortVariables).distinct
 
     println(s"${modelName} Java internal state variables:")
     modelStateParameters.foreach(node => println(_))

@@ -49,8 +49,11 @@ class CouplingsGenerator(val pkg: String, val basePackage: String, val immutable
   }
 
   def builddetermineTargetModels(): String = {
-    val cases = flows.map { flow =>
-      s"            case \"${flow.fromPort}\" -> new String[] {${flow.toModel}.modelIdentifier};"
+    //val cases = flows.map { flow =>
+    //  s"            case \"${flow.fromPort}\" -> new String[] {${flow.toModel}.modelIdentifier};"
+    //}.distinct.mkString("\n")
+    val cases = flows.map(_.fromPort).distinct.map { fromPort =>
+      buildCase(fromPort, flows.filter(_.fromPort == fromPort))
     }.distinct.mkString("\n")
     if (cases.isEmpty) {
       ""
@@ -66,6 +69,11 @@ class CouplingsGenerator(val pkg: String, val basePackage: String, val immutable
          |    }
          |""".stripMargin
     }
+  }
+
+  def buildCase(fromPort: String, flows: List[ItemFlow]): String = {
+    val toModels: String = flows.map(_.toModel + ".modelIdentifier").mkString(", ")
+    s"            case \"${fromPort}\" -> new String[] {${toModels}};"
   }
 
   def buildOutputCouplingFlows(): String = {

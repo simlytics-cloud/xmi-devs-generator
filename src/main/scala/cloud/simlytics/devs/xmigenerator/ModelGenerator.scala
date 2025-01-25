@@ -40,8 +40,8 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
     val ports = inputPorts ++ outputPorts
     ports.map { port =>
       val comment = buildComment(port.comment)
-      s"${comment}    public static Port<${port.parameterType}> ${lowerFirstLetter(port.name)} = " +
-        s"new Port<>(\"${lowerFirstLetter(port.name)}\");"
+      s"${comment}    public static final Port<${port.parameterType}> ${lowerFirstLetter(port.name)} = " +
+        s"new Port<>(\"${lowerFirstLetter(port.name)}\", ${port.parameterType}.class);"
 
     }.mkString("\n") + "\n"
   }

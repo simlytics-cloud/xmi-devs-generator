@@ -131,8 +131,8 @@ class CoupledModelGenerator(pkg: String, val immutablesPkg: String, val coupledM
 
   def buildPorts(): String = {
     ports.map { port =>
-      s"${buildComment(port.comment)}    public static Port<${port.parameterType}> ${lowerFirstLetter(port.name)} = " +
-        s"new Port<>(\"${lowerFirstLetter(port.name)}\");"
+      s"${buildComment(port.comment)}    public static final Port<${port.parameterType}> ${lowerFirstLetter(port.name)} = " +
+        s"new Port<>(\"${lowerFirstLetter(port.name)}\", ${port.parameterType}.class);"
 
     }.mkString("\n") + "\n"
   }
