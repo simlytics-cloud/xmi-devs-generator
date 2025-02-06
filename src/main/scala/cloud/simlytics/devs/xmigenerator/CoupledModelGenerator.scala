@@ -60,10 +60,10 @@ class CoupledModelGenerator(pkg: String, val immutablesPkg: String, val coupledM
        |${buildPorts()}
        |    public ${coupledModelName}(
        |            String modelIdentifier,
-       |            String parentId, Map<String, ActorRef<DevsMessage>> modelsSimulators,
+       |            Map<String, ActorRef<DevsMessage>> modelsSimulators,
        |            PDevsCouplings couplings,
        |            ActorContext<DevsMessage> context) {
-       |        super(modelIdentifier, parentId, modelsSimulators, couplings, context);
+       |        super(modelIdentifier, modelsSimulators, couplings, context);
        |    }
        |}
        |""".stripMargin

@@ -22,6 +22,7 @@ class ImmutableGenerator(val className: String, val pkg: String, val immutablesP
        |${otherPackages.map(p => "import " + p + ".*;").mkString("\n")}
        |import java.util.List;
        |import java.util.Map;
+       |import java.util.Optional;
        |import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
        |import com.fasterxml.jackson.databind.annotation.JsonSerialize;
        |import org.immutables.value.Value;

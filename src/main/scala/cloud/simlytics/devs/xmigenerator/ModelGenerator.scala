@@ -63,6 +63,7 @@ class ModelGenerator(className: String, pkg: String, val immutablesPkg: String, 
        |import devs.PDEVSModel;
        |import java.util.List;
        |import java.util.ArrayList;
+       |import java.util.Optional;
        |""".stripMargin
   }
 

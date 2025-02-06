@@ -652,12 +652,20 @@ class XmiParser(devsElement: Elem, modelFileElement: Elem, modelPackage: String,
                 throw new IllegalArgumentException("Unrecognized cardinality ")
             }
         }
-      case None => implementedClassName
+      case None => 
+        (node \ "lowerValue").headOption match {
+          // If a node has a literal integer lower value and no upper value, it is 0..1 and we use Optional
+          case Some(lowerNode) =>
+            val lowerType: String = attributeValueOption(lowerNode, "xmi:type").getOrElse {
+              throw new IllegalArgumentException("lowerValue element in node below has no \"xmi:type\" attribute.\n" + node)
+            }
+            lowerType match {
+              case x if x.contains("LiteralInteger") => s"Optional<${implementedClassName}>"
+              case _ => implementedClassName
+            }
+          case None => implementedClassName
+        }
     }
   }
-
-
-
-
 
 }
